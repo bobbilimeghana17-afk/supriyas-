@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Birthday Gift — Swipe to Unwrap</title>
+  <style>
+    :root{--bg:#0b0b0b}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    #container{position:relative;width:100vw;height:100vh;overflow:hidden;touch-action:none}
+
+    /* Layers fill screen — larger so photo is visible */
+    .layer{
+      position:absolute;inset:0;
+      display:flex;align-items:center;justify-content:center;
+      font-size:5vw;color:#fff;font-weight:700;text-transform:uppercase;
+      transition:transform 0.45s cubic-bezier(.2,.9,.2,1),opacity 0.45s ease;
+      will-change:transform,opacity;
+      user-select:none;
+    }
+
+    /* Add slight shadow to layers so you can see depth */
+    .layer::after{content:'';position:absolute;inset:0;box-shadow:0 18px 40px rgba(0,0,0,0.36);border-radius:0}
+
+    img#photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(0.98);transition:opacity 900ms ease,transform 900ms ease}
+
+    canvas#confetti{position:absolute;inset:0;pointer-events:none}
+
+    /* small helper text */
+    .help{position:absolute;left:12px;bottom:12px;color:#ddd;font-size:13px;background:rgba(0,0,0,0.28);padding:8px 10px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div id="container" aria-label="Birthday unwrap area"></div>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <div class="help">Drag or swipe left / right to unwrap</div>
+
+  <script>
+  // --- Setup layers + photo ---
+  const container = document.getElementById('container');
+  const colors = ['#ff4b5c','#ff8a65','#ffd54f','#dce775','#4db6ac','#4fc3f7','#7986cb','#b39ddb','#ec407a','#ff7043'];
+
+  // Create layers so later elements are visually on top (last created = top)
+  for (let i = 0; i < colors.length; i++){
+    const layer = document.createElement('div');
+    layer.className = 'layer';
+    layer.style.background = colors[i];
+    layer.style.zIndex = (i+1).toString(); // ensure stacking order
+    layer.textContent = 'Swipe to unwrap';
+    container.appendChild(layer);
+  }
+
+  const photo = document.createElement('img');
+  photo.id = 'photo';
+  photo.src = 'photo.jpg'; // replace or keep this file in same folder
+  container.appendChild(photo);
+
+  // Grab live list of layers (last element is the topmost)
+  function getLayers(){ return Array.from(container.querySelectorAll('.layer')); }
+
+  // --- Pointer handling (works for touch & mouse) ---
+  let isPointerDown = false; let startX = 0; let curLayer = null; let pointerId = null;
+  const threshold = 60; // px required to release
+
+  function onPointerDown(e){
+    const layers = getLayers();
+    if(layers.length === 0) return;
+    isPointerDown = true; startX = e.clientX || e.touches?.[0]?.clientX || 0; pointerId = e.pointerId;
+    curLayer = layers[layers.length - 1]; // topmost
+    // disable transition while dragging for immediate response
+    curLayer.style.transition = 'transform 0s';
+    if (e.pointerId) container.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e){
+    if(!isPointerDown || !curLayer) return;
+    const x = e.clientX || (e.touches && e.touches[0] && e.touches[0].clientX) || 0;
+    const dx = x - startX;
+    // move layer with finger/mouse and add small rotation for feedback
+    curLayer.style.transform = `translateX(${dx}px) rotate(${dx/20}deg)`;
+  }
+
+  function onPointerUp(e){
+    if(!isPointerDown || !curLayer) { isPointerDown=false; curLayer=null; return; }
+    const x = e.clientX || (e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientX) || 0;
+    const dx = x - startX;
+    curLayer.style.transition = 'transform 0.45s cubic-bezier(.2,.9,.2,1), opacity 0.45s ease';
+    if(Math.abs(dx) > threshold){
+      // fly away off-screen in the swipe direction
+      const off = (dx > 0) ? (window.innerWidth * 1.2) : (-window.innerWidth * 1.2);
+      curLayer.style.transform = `translateX(${off}px) rotate(${dx>0?30:-30}deg)`;
+      curLayer.style.opacity = '0';
+      // remove DOM after animation
+      setTimeout(()=>{
+        curLayer.remove();
+        // if no layers left -> reveal
+        if(getLayers().length === 0){ revealPhotoAndBlast(); }
+      }, 480);
+    } else {
+      // snap back
+      curLayer.style.transform = '';
+    }
+
+    // cleanup
+    try{ if(e.pointerId) container.releasePointerCapture(e.pointerId); }catch(e){}
+    isPointerDown = false; curLayer = null;
+  }
+
+  // pointer events (modern browsers)
+  container.addEventListener('pointerdown', onPointerDown);
+  container.addEventListener('pointermove', onPointerMove);
+  container.addEventListener('pointerup', onPointerUp);
+  container.addEventListener('pointercancel', onPointerUp);
+
+  // fallback: touch events for very old browsers
+  container.addEventListener('touchstart', (ev)=>onPointerDown(ev.touches[0]));
+  container.addEventListener('touchmove', (ev)=>{ ev.preventDefault(); onPointerMove(ev.touches[0]); }, {passive:false});
+  container.addEventListener('touchend', (ev)=>onPointerUp(ev.changedTouches[0]));
+
+  // fallback click (if all else fails) — click top layer to remove
+  container.addEventListener('click', ()=>{
+    const layers = getLayers(); if(layers.length===0) return;
+    const top = layers[layers.length-1];
+    top.style.transition = 'transform 0.45s cubic-bezier(.2,.9,.2,1), opacity 0.45s ease';
+    top.style.transform = 'translateY(-140%)'; top.style.opacity='0';
+    setTimeout(()=>{ top.remove(); if(getLayers().length===0) revealPhotoAndBlast(); },480);
+  });
+
+  // --- Reveal / confetti / voice ---
+  function revealPhotoAndBlast(){
+    photo.style.opacity = '1'; photo.style.transform = 'scale(1.03)';
+    startConfetti();
+    playVoice();
+  }
+
+  function playVoice(){
+    // if voice.mp3 exists in same folder it will be used, otherwise TTS
+    fetch('voice.mp3', {method:'HEAD'}).then(r=>{
+      if(r.ok){ new Audio('voice.mp3').play().catch(()=>{}); }
+      else speakTTS();
+    }).catch(()=>{ speakTTS(); });
+  }
+
+  function speakTTS(){
+    if(!('speechSynthesis' in window)) return;
+    const msg = new SpeechSynthesisUtterance('Happy Birthday! Wishing you lots of joy and surprises.');
+    const voices = speechSynthesis.getVoices(); if(voices && voices.length) msg.voice = voices[0];
+    speechSynthesis.cancel(); setTimeout(()=>speechSynthesis.speak(msg), 250);
+  }
+
+  // Confetti: lightweight canvas particle burst
+  function startConfetti(){
+    const canvas = document.getElementById('confetti');
+    const ctx = canvas.getContext('2d');
+    const rect = container.getBoundingClientRect();
+    canvas.width = Math.round(rect.width); canvas.height = Math.round(rect.height);
+
+    const pieces = [];
+    for(let i=0;i<220;i++){
+      pieces.push({
+        x: Math.random()*canvas.width,
+        y: -Math.random()*canvas.height,
+        w: Math.random()*10 + 6,
+        h: Math.random()*10 + 6,
+        vx: (Math.random()*6)-3,
+        vy: Math.random()*3 + 2,
+        rot: Math.random()*360,
+        vr: (Math.random()*8)-4,
+        color: colors[Math.floor(Math.random()*colors.length)]
+      });
+    }
+
+    let running = true;
+    const gravity = 0.06;
+    function frame(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      for(const p of pieces){
+        p.x += p.vx; p.y += p.vy; p.vy += gravity; p.rot += p.vr;
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot*Math.PI/180);
+        ctx.fillStyle = p.color; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h); ctx.restore();
+      }
+      if(running) requestAnimationFrame(frame);
+    }
+    frame();
+    // stop after 6s
+    setTimeout(()=>running=false,6000);
+  }
+
+  // If image not found, show fallback colored background message
+  const test = new Image(); test.onload = ()=>{}; test.onerror = ()=>{
+    photo.style.display='none'; const fallback = document.createElement('div'); fallback.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:6vw'; fallback.textContent='Open to celebrate!'; container.insertBefore(fallback, container.firstChild);
+  }; test.src = photo.src;
+
+  // Small tip: If this still doesn't respond on your device, tell me which browser and whether you opened the file from a local folder (file://) or from a web server.
+  </script>
+</body>
+</html>
