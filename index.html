@@ -52,9 +52,9 @@
   }
 
   const photo = document.createElement('img');
-  photo.id = 'Photo';
+  photo.id = 'photo';
   photo.src = 'Photo.jpg'; // replace or keep this file in same folder
-  container.appendChild(Photo);
+  container.appendChild(photo);
 
   // Grab live list of layers (last element is the topmost)
   function getLayers(){ return Array.from(container.querySelectorAll('.layer')); }
@@ -196,6 +196,7 @@
   </script>
 </body>
 </html>
+
 
 
 
